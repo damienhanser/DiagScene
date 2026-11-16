@@ -1,0 +1,12 @@
+# Fichiers système et caches
+.DS_Store
+__pycache__/
+*.pyc
+
+# Paquets construits : publiés comme « Releases » sur GitHub, pas dans le code
+Diffusion/
+Archives/*.zip
+Archives/*.txt
+
+# Notes de travail internes
+DiagScene - dossier de projet.md

@@ -1,0 +1,193 @@
+# Configuration « Général » : contrôles de base valables pour tout fichier Blender.
+# Ce fichier sert aussi de référence : il liste toutes les règles et tous leurs réglages.
+#
+# Pour chaque règle [regles.<nom>] :
+#   actif   = true | false
+#   niveau  = "bloquant" | "avertissement" | "conseil"
+#   ses réglages propres (seuils, listes)
+#   et, si besoin, titre / pourquoi / comment / lien pour remplacer les textes affichés.
+# Une règle absente du fichier garde ses valeurs par défaut.
+# Dans [meta], seulement_listees = true n'active que les règles écrites dans le fichier.
+
+[meta]
+nom = "Général"
+version = "2026-11-16"
+ordre = 9
+description = "Contrôles de base valables pour tout fichier Blender"
+
+# --- Rendu -------------------------------------------------------------
+[regles.echantillons]
+niveau = "bloquant"
+max_cycles = 4096
+exiger_adaptatif = true
+max_eevee = 256
+
+[regles.resolution]
+niveau = "conseil"
+
+# --- Caméras -----------------------------------------------------------
+[regles.camera_active]
+niveau = "bloquant"
+
+[regles.camera_aplomb]
+niveau = "avertissement"
+tolerance_deg = 0.5              # au-delà, on signale
+plongee_volontaire_deg = 30.0    # au-delà, on considère la plongée comme voulue
+seulement_active = false
+ignorer_si_image_de_fond = true  # caméra calée sur une photo (fSpy) : inclinaison voulue
+
+[regles.camera_focale]
+niveau = "avertissement"
+focale_min = 14.0
+focale_max = 135.0
+
+[regles.camera_echelle]
+niveau = "avertissement"
+
+[regles.camera_format]           # photo de fond (fSpy) et proportions du rendu
+niveau = "avertissement"
+tolerance = 0.01
+
+[regles.camera_decoupe]
+niveau = "avertissement"
+debut_max = 0.5                  # en mètres
+
+[regles.camera_decalage]
+niveau = "conseil"
+max_decalage = 0.5
+
+# --- Lumière -----------------------------------------------------------
+[regles.lampe_noyee]
+niveau = "bloquant"
+
+[regles.puissance]
+niveau = "avertissement"
+point_max = 2000.0               # watts Blender
+spot_max = 5000.0
+zone_max = 2000.0
+soleil_max = 10.0
+monde_max = 3.0                  # force du fond (HDRI)
+
+[regles.exposition]
+niveau = "conseil"
+ecart_max = 1.5
+
+[regles.ombres_dures]
+niveau = "conseil"
+rayon_min = 0.01                 # en mètres
+
+[regles.ombres_desactivees]
+niveau = "conseil"
+
+[regles.lampes_non_liees]
+niveau = "conseil"
+groupe_min = 3
+
+[regles.couleur_sans_temperature]
+niveau = "conseil"
+blanc_min = 0.98
+
+[regles.hdri_resolution]
+niveau = "conseil"
+largeur_min = 2048               # en pixels
+
+# --- Objets ------------------------------------------------------------
+[regles.echelle_non_appliquee]
+niveau = "avertissement"
+niveau_si_sensible = "bloquant"  # si un modificateur ou une texture dépend de l'échelle
+types = ["MESH", "CURVE", "SURFACE", "FONT", "META"]
+modificateurs_sensibles = ["BEVEL", "SOLIDIFY", "ARRAY", "SUBSURF", "WIREFRAME", "SCREW", "DISPLACE"]
+
+[regles.echelle_negative]
+niveau = "avertissement"
+
+[regles.visibilite]
+niveau = "conseil"
+
+# --- Matériaux ---------------------------------------------------------
+[regles.materiau_absent]
+niveau = "conseil"
+types = ["MESH", "CURVE", "FONT"]
+
+[regles.nodes_non_relies]
+niveau = "conseil"
+cadres_ignores = ["demo", "démo", "old", "brouillon"]   # nodes rangés dans un cadre portant ce nom : ignorés
+
+[regles.textures_manquantes]
+niveau = "bloquant"
+
+[regles.espace_couleur]
+niveau = "avertissement"
+
+[regles.deplacement_adapte]
+niveau = "conseil"
+distance_loin = 8.0              # au-delà : un bump suffit
+distance_proche = 1.0            # en deçà : le bump laisse une silhouette plate
+faces_min = 1000                 # vrai déplacement sans subdivision : avertissement
+
+[regles.materiau_uniforme]
+niveau = "conseil"
+surface_min = 2.0                # en m²
+
+[regles.techniques]              # signalées en « acquis » quand elles sont utilisées
+niveau = "conseil"
+attendues = ["noise", "color_ramp", "mix_pilote"]
+
+# --- UV (seuils à calibrer) --------------------------------------------
+[regles.uv_manquantes]
+niveau = "bloquant"
+
+[regles.uv_ecrasees]
+niveau = "bloquant"
+part_min = 0.01
+
+[regles.uv_etirement]
+niveau = "conseil"
+facteur = 2.0
+part_max = 0.2
+
+[regles.uv_densite]
+niveau = "conseil"
+ecart_max = 2.0
+
+[regles.uv_cartes_multiples]
+niveau = "conseil"
+
+[regles.uv_chevauchement]        # utile surtout avant un bake
+actif = false
+seulement_selection = false
+seuil = 0.02
+resolution = 256
+
+[regles.uv_hors_cadre]
+actif = false
+seulement_selection = false
+tolerance = 0.001
+
+# --- Bake (voir la thématique « Vérification avant le bake ») ----------
+[regles.bake_selection]
+actif = false
+[regles.bake_moteur]
+actif = false
+[regles.bake_image_cible]
+actif = false
+[regles.bake_image_enregistree]
+actif = false
+[regles.bake_espace_couleur]
+actif = false
+[regles.bake_marge]
+actif = false
+px_par_1024 = 8
+[regles.bake_eclairage]
+actif = false
+[regles.bake_cage]
+actif = false
+
+# --- Organisation ------------------------------------------------------
+[regles.noms_par_defaut]
+niveau = "conseil"
+signaler_copies = true
+
+[regles.objets_racine]
+niveau = "conseil"
+max_objets = 0

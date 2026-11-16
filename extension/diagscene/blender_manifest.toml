@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "diagscene"
+version = "1.1.0"
+name = "DiagScene"
+tagline = "Diagnostic pedagogique d'un fichier, sans rien corriger"
+maintainer = "Damien Hanser"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+
+website = "https://github.com/damienhanser/DiagScene"
+
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Damien Hanser"]
+
+[permissions]
+files = "Ecrire le rapport d'analyse a cote du fichier blend"

@@ -1,0 +1,25 @@
+# Configuration « Rendu réaliste » : Master DNA/VDA, cours Blender rendu réaliste et matériaux.
+# Seules les différences avec les valeurs par défaut sont écrites ici (voir general.toml pour la liste complète).
+
+[meta]
+nom = "Rendu réaliste (Master DNA/VDA)"
+version = "2026-11-20"
+ordre = 1
+description = "Rendu architectural réaliste : caméra d'aplomb, lumière, matériaux, UV"
+
+[regles.echantillons]
+max_cycles = 2048
+
+[regles.camera_aplomb]
+tolerance_deg = 0.2
+comment = "Rotation X de la caméra à 90° exactement, rotation Y à 0°, et cadrage en hauteur par le décalage Y (Propriétés de la caméra > Objectif). C'est la règle de la perspective architecturale vue en cours."
+
+[regles.camera_focale]
+focale_min = 16.0
+focale_max = 100.0
+
+[regles.nodes_non_relies]
+niveau = "avertissement"
+
+[regles.techniques]
+attendues = ["noise", "color_ramp", "mix_pilote"]

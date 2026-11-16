@@ -1,0 +1,34 @@
+# Configuration « Vérification avant le bake » : à lancer avec l'objet à baker sélectionné,
+# juste avant Propriétés > Rendu > Bake. Seules les règles écrites ici sont actives.
+
+[meta]
+nom = "Vérification avant le bake"
+version = "2026-11-16"
+ordre = 5
+description = "Contrôle de l'objet sélectionné avant un bake de texture"
+seulement_listees = true
+
+[regles.bake_selection]
+[regles.bake_moteur]
+[regles.bake_image_cible]
+[regles.bake_image_enregistree]
+[regles.bake_espace_couleur]
+[regles.bake_marge]
+[regles.bake_eclairage]
+[regles.bake_cage]
+
+[regles.uv_manquantes]
+[regles.uv_ecrasees]
+
+[regles.uv_chevauchement]
+niveau = "bloquant"
+seulement_selection = true
+
+[regles.uv_hors_cadre]
+niveau = "bloquant"
+seulement_selection = true
+
+[regles.uv_etirement]
+seulement_selection = true
+[regles.uv_cartes_multiples]
+[regles.echelle_non_appliquee]
