@@ -8,6 +8,10 @@
 #   et, si besoin, titre / pourquoi / comment / lien pour remplacer les textes affichés.
 # Une règle absente du fichier garde ses valeurs par défaut.
 # Dans [meta], seulement_listees = true n'active que les règles écrites dans le fichier.
+#
+# Section facultative [journal], pour une grille chargée depuis un fichier :
+#   obligatoire = true   le journal est toujours tenu, la case des préférences est remplacée
+#                        par « imposé » (tant que cette grille reste la dernière chargée).
 
 [meta]
 nom = "Général"

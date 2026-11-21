@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "diagscene"
-version = "1.2.0"
+version = "1.2.1"
 name = "DiagScene"
 tagline = "Diagnostic pedagogique d'un fichier, sans rien corriger"
 maintainer = "Damien Hanser"

@@ -280,7 +280,8 @@ def _dessiner_journal(lay, e, largeur):
     elif s is None:
         r.label(text="Journal : commence au prochain enregistrement", icon="TIME")
     else:
-        r.label(text=f"Journal : {s['enregistrements']} enreg. · {len(s['jours'])} jour(s)",
+        r.label(text=f"Journal : {s['enregistrements']} enreg. · {len(s['jours'])} jour(s)"
+                     + (" · imposé" if journal.impose() else ""),
                 icon="TIME" if s["integre"] else "ERROR")
     if not e.voir_journal or s is None:
         return
@@ -366,7 +367,13 @@ class DIAG_Preferences(AddonPreferences):
 
     def draw(self, context):
         lay = self.layout
-        lay.prop(self, "journal_actif")
+        grille = journal.impose()
+        if grille:
+            lay.label(text="Tenir le journal de travail : imposé", icon="LOCKED")
+            _texte(lay, f"La grille « {grille} » impose le journal : il est tenu à chaque enregistrement "
+                        "et à chaque analyse, quel que soit ce réglage.", 90)
+        else:
+            lay.prop(self, "journal_actif")
         _texte(lay, "Le journal est écrit dans le fichier .blend (bloc de texte « .diagscene_journal »). "
                     "Il retrace l'histoire du fichier pour retrouver l'arrivée d'un problème. Il ne contient "
                     "ni votre nom d'utilisateur ni le nom de votre ordinateur.", 90)

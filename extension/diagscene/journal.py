@@ -162,7 +162,29 @@ def synthese(entrees=None):
 
 # --- Préférence et gestionnaire d'enregistrement ----------------------------
 
+def impose():
+    """Nom de la grille chargée qui impose le journal ([journal] obligatoire = true), sinon "".
+
+    La grille prise en compte est la dernière chargée depuis un fichier (mémorisée dans les
+    préférences) : elle reste valable après un redémarrage de Blender.
+    """
+    try:
+        prefs = bpy.context.preferences.addons[__package__].preferences
+        chemin = bpy.path.abspath(prefs.dernier_toml) if prefs.dernier_toml else ""
+        if not chemin or not os.path.isfile(chemin):
+            return ""
+        from . import config
+        data = config.charger(chemin)
+        if data.get("journal", {}).get("obligatoire", False):
+            return data["meta"].get("nom", os.path.basename(chemin))
+    except Exception:  # grille illisible : elle n'impose rien
+        pass
+    return ""
+
+
 def actif():
+    if impose():
+        return True
     try:
         prefs = bpy.context.preferences.addons[__package__].preferences
         return bool(prefs.journal_actif)

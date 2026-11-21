@@ -38,3 +38,6 @@ Traçabilité et évaluations externes.
   - `poids_fichier` : poids du fichier, faces, mémoire des textures (information, avertissement au-delà de seuils facultatifs).
 - **UV** : option `seulement_textures_image` pour `uv_manquantes` et `uv_ecrasees` (ne contrôler que les objets dont une texture image est placée par des UV).
 - Première grille externe : modélisation avancée (M1, S7), distribuée à part aux étudiants.
+
+## v1.2.1 — 2026-11-21
+- **Journal imposé par la grille** : une grille chargée depuis un fichier peut contenir `[journal]` avec `obligatoire = true`. Le journal est alors toujours tenu, et la case des préférences est remplacée par « imposé », avec le nom de la grille. L'obligation dure tant que cette grille reste la dernière chargée, y compris après un redémarrage de Blender. Le panneau affiche « imposé » à côté du journal.
