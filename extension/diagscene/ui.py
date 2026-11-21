@@ -42,6 +42,11 @@ def _toml_externe(context=None):
 def items_configs(self, context):
     global _items_configs
     _items_configs = []
+    if config.verrouille():
+        meta = config.lister()[0][1]
+        _items_configs = [(os.path.basename(config.VERROU), meta.get("nom", "Grille du cours"),
+                           meta.get("description", ""), "LOCKED", 0)]
+        return _items_configs
     ext = _toml_externe(context)
     if ext:
         try:
@@ -67,6 +72,8 @@ def _maj_config_perso(self, context):
 
 
 def _config_choisie(etat):
+    if config.verrouille():
+        return config.charger(config.VERROU)
     if etat.config == EXTERNE:
         chemin = _toml_externe()
         if not chemin:
@@ -377,7 +384,8 @@ class DIAG_Preferences(AddonPreferences):
         _texte(lay, "Le journal est écrit dans le fichier .blend (bloc de texte « .diagscene_journal »). "
                     "Il retrace l'histoire du fichier pour retrouver l'arrivée d'un problème. Il ne contient "
                     "ni votre nom d'utilisateur ni le nom de votre ordinateur.", 90)
-        lay.prop(self, "dernier_toml")
+        if not config.verrouille():
+            lay.prop(self, "dernier_toml")
 
 
 CLASSES = (DIAG_Preferences, DIAG_Alerte, DIAG_Etat, DIAG_OT_analyser, DIAG_OT_exporter, DIAG_OT_ouvrir_dossier,

@@ -169,11 +169,14 @@ def impose():
     préférences) : elle reste valable après un redémarrage de Blender.
     """
     try:
-        prefs = bpy.context.preferences.addons[__package__].preferences
-        chemin = bpy.path.abspath(prefs.dernier_toml) if prefs.dernier_toml else ""
+        from . import config
+        if config.verrouille():
+            chemin = config.VERROU
+        else:
+            prefs = bpy.context.preferences.addons[__package__].preferences
+            chemin = bpy.path.abspath(prefs.dernier_toml) if prefs.dernier_toml else ""
         if not chemin or not os.path.isfile(chemin):
             return ""
-        from . import config
         data = config.charger(chemin)
         if data.get("journal", {}).get("obligatoire", False):
             return data["meta"].get("nom", os.path.basename(chemin))

@@ -7,6 +7,13 @@ import os
 import tomllib
 
 DOSSIER = os.path.join(os.path.dirname(__file__), "configs")
+# Version de cours : une grille unique, intégrée et non modifiable depuis le panneau.
+# Présente seulement dans les paquets construits pour un cours (jamais dans la version publique).
+VERROU = os.path.join(DOSSIER, "verrou.toml")
+
+
+def verrouille():
+    return os.path.isfile(VERROU)
 
 
 def charger(chemin):
@@ -25,6 +32,8 @@ def charger(chemin):
 
 def lister():
     """Configurations livrées avec l'extension : [(chemin, meta)] triées par ordre puis nom."""
+    if verrouille():
+        return [(VERROU, charger(VERROU)["meta"])]
     res = []
     for chemin in glob.glob(os.path.join(DOSSIER, "*.toml")):
         try:

@@ -41,3 +41,4 @@ Traçabilité et évaluations externes.
 
 ## v1.2.1 — 2026-11-21
 - **Journal imposé par la grille** : une grille chargée depuis un fichier peut contenir `[journal]` avec `obligatoire = true`. Le journal est alors toujours tenu, et la case des préférences est remplacée par « imposé », avec le nom de la grille. L'obligation dure tant que cette grille reste la dernière chargée, y compris après un redémarrage de Blender. Le panneau affiche « imposé » à côté du journal.
+- **Versions de cours** : un paquet peut intégrer une grille unique (`configs/verrou.toml`). Elle est alors la seule thématique proposée, sans « Charger un fichier .toml… », et son éventuelle section `[journal]` s'applique. La version publique n'en contient pas.
