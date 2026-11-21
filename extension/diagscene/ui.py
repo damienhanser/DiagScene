@@ -6,12 +6,13 @@ import textwrap
 
 import bpy
 from bpy.props import BoolProperty, CollectionProperty, EnumProperty, IntProperty, PointerProperty, StringProperty
-from bpy.types import Operator, Panel, PropertyGroup
+from bpy.types import AddonPreferences, Operator, Panel, PropertyGroup
 
-from . import config, rapport, regles
+from . import config, journal, rapport, regles
 
 ICONES = {"bloquant": "CANCEL", "avertissement": "ERROR", "conseil": "INFO", "acquis": "CHECKMARK"}
 PERSO = "__perso__"
+EXTERNE = "__externe__"
 _items_configs = []  # référence gardée : Blender exige que la liste survive à l'appel
 
 
@@ -24,15 +25,53 @@ def _version_extension():
         return "?"
 
 
+def _prefs(context=None):
+    try:
+        return (context or bpy.context).preferences.addons[__package__].preferences
+    except (KeyError, AttributeError):
+        return None
+
+
+def _toml_externe(context=None):
+    """Chemin de la dernière configuration chargée depuis un fichier, s'il existe toujours."""
+    pr = _prefs(context)
+    chemin = bpy.path.abspath(pr.dernier_toml) if pr and pr.dernier_toml else ""
+    return chemin if chemin and os.path.isfile(chemin) else ""
+
+
 def items_configs(self, context):
     global _items_configs
-    _items_configs = [(os.path.basename(ch), meta.get("nom", os.path.basename(ch)),
-                       meta.get("description", ch), i) for i, (ch, meta) in enumerate(config.lister())]
-    _items_configs.append((PERSO, "Fichier personnalisé…", "Choisir un fichier de configuration .toml", 999))
+    _items_configs = []
+    ext = _toml_externe(context)
+    if ext:
+        try:
+            meta = config.charger(ext)["meta"]
+            nom = meta.get("nom", os.path.basename(ext))
+        except Exception:
+            nom = os.path.basename(ext) + " (illisible)"
+        _items_configs.append((EXTERNE, f"{nom} (fichier chargé)", ext, "FILE", 0))
+    _items_configs += [(os.path.basename(ch), meta.get("nom", os.path.basename(ch)),
+                        meta.get("description", ch), "NONE", i + 1) for i, (ch, meta) in enumerate(config.lister())]
+    _items_configs.append((PERSO, "Charger un fichier .toml…", "Choisir un fichier de configuration .toml "
+                           "(par exemple celui fourni par votre enseignant)", "FILEBROWSER", 999))
     return _items_configs
 
 
+def _maj_config_perso(self, context):
+    """Un fichier choisi devient la configuration externe mémorisée, en tête de liste."""
+    chemin = bpy.path.abspath(self.config_perso)
+    pr = _prefs(context)
+    if pr is not None and chemin and os.path.isfile(chemin):
+        pr.dernier_toml = chemin
+        self.config = EXTERNE
+
+
 def _config_choisie(etat):
+    if etat.config == EXTERNE:
+        chemin = _toml_externe()
+        if not chemin:
+            raise ValueError("Le fichier de configuration chargé est introuvable : rechargez-le.")
+        return config.charger(chemin)
     if etat.config == PERSO:
         chemin = bpy.path.abspath(etat.config_perso)
         if not chemin or not os.path.isfile(chemin):
@@ -57,7 +96,8 @@ class DIAG_Alerte(PropertyGroup):
 
 class DIAG_Etat(PropertyGroup):
     config: EnumProperty(name="Thématique", description="Jeu de règles utilisé pour l'analyse", items=items_configs)
-    config_perso: StringProperty(name="Configuration", subtype="FILE_PATH")
+    config_perso: StringProperty(name="Configuration", subtype="FILE_PATH", update=_maj_config_perso)
+    voir_journal: BoolProperty(name="Journal de travail", default=False)
     alertes: CollectionProperty(type=DIAG_Alerte)
     analyse_faite: BoolProperty(default=False)
     thematique: StringProperty()
@@ -90,6 +130,11 @@ def _lancer_analyse(context):
     for n in regles.NIVEAUX:
         setattr(etat, f"nb_{n}", sum(1 for a in alertes if a["niveau"] == n))
     etat.analyse_faite = True
+    try:
+        journal.ajouter("analyse", thematique=cfg["meta"].get("nom", ""), config_sha=cfg["meta"].get("sha", ""),
+                        bloquants=etat.nb_bloquant, avertissements=etat.nb_avertissement, conseils=etat.nb_conseil)
+    except Exception as e:
+        print(f"DiagScene : journal non mis à jour ({type(e).__name__} : {e})")
     return alertes, cfg
 
 
@@ -224,6 +269,27 @@ def _texte(layout, texte, largeur, icone="NONE"):
             premiere = False
 
 
+def _dessiner_journal(lay, e, largeur):
+    s = journal.synthese()
+    b = lay.box()
+    r = b.row(align=True)
+    r.prop(e, "voir_journal", text="", emboss=False,
+           icon="DISCLOSURE_TRI_DOWN" if e.voir_journal else "DISCLOSURE_TRI_RIGHT")
+    if not journal.actif():
+        r.label(text="Journal désactivé", icon="ERROR")
+    elif s is None:
+        r.label(text="Journal : commence au prochain enregistrement", icon="TIME")
+    else:
+        r.label(text=f"Journal : {s['enregistrements']} enreg. · {len(s['jours'])} jour(s)",
+                icon="TIME" if s["integre"] else "ERROR")
+    if not e.voir_journal or s is None:
+        return
+    _texte(b, f"Depuis le {s['premiere']['date'][:16]} · {len(s['machines'])} machine(s) · "
+              f"Blender {', '.join(s['versions'])}", largeur)
+    if not s["integre"]:
+        _texte(b, "Journal altéré : " + " ; ".join(s["problemes"][:3]), largeur, "ERROR")
+
+
 class DIAG_PT_panneau(Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -257,6 +323,7 @@ class DIAG_PT_panneau(Panel):
         r.label(text=str(e.nb_acquis), icon="CHECKMARK")
         if e.nb_bloquant + e.nb_avertissement + e.nb_conseil == 0:
             box.label(text="Aucun problème détecté", icon="CHECKMARK")
+        _dessiner_journal(lay, e, largeur)
         r = lay.row(align=True)
         r.operator("diag.exporter", icon="EXPORT")
         r.operator("diag.ouvrir_dossier", text="", icon="FILE_FOLDER")
@@ -288,7 +355,25 @@ class DIAG_PT_panneau(Panel):
                     b.operator("wm.url_open", text="En savoir plus", icon="URL").url = a.lien
 
 
-CLASSES = (DIAG_Alerte, DIAG_Etat, DIAG_OT_analyser, DIAG_OT_exporter, DIAG_OT_ouvrir_dossier,
+class DIAG_Preferences(AddonPreferences):
+    bl_idname = __package__
+    journal_actif: BoolProperty(
+        name="Tenir le journal de travail",
+        description="À chaque enregistrement et à chaque analyse, ajouter une ligne au journal du fichier "
+                    "(date, version de Blender, taille de la scène, empreinte anonyme de la machine)",
+        default=True)
+    dernier_toml: StringProperty(name="Dernière configuration chargée", subtype="FILE_PATH")
+
+    def draw(self, context):
+        lay = self.layout
+        lay.prop(self, "journal_actif")
+        _texte(lay, "Le journal est écrit dans le fichier .blend (bloc de texte « .diagscene_journal »). "
+                    "Il retrace l'histoire du fichier pour retrouver l'arrivée d'un problème. Il ne contient "
+                    "ni votre nom d'utilisateur ni le nom de votre ordinateur.", 90)
+        lay.prop(self, "dernier_toml")
+
+
+CLASSES = (DIAG_Preferences, DIAG_Alerte, DIAG_Etat, DIAG_OT_analyser, DIAG_OT_exporter, DIAG_OT_ouvrir_dossier,
            DIAG_OT_montrer, DIAG_PT_panneau)
 
 

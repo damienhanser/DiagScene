@@ -811,7 +811,9 @@ def r_techniques(ctx, p):
 # =========================================================================
 
 def _objets_uv(ctx, p):
-    """Objets maillage dont un matériau utilise des coordonnées UV."""
+    """Objets maillage dont un matériau utilise des coordonnées UV
+    (avec p["seulement_textures_image"] : seulement pour placer une texture image)."""
+    test = _utilise_uv_image if p.get("seulement_textures_image") else _utilise_uv
     if p.get("seulement_selection"):
         base = [o for o in ctx["selection"] if o.type == "MESH"]
     else:
@@ -820,7 +822,7 @@ def _objets_uv(ctx, p):
     for o in base:
         for s in o.material_slots:
             m = s.material
-            if m is not None and m.node_tree is not None and _utilise_uv(m.node_tree, _atteints_mat(ctx, m)):
+            if m is not None and m.node_tree is not None and test(m.node_tree, _atteints_mat(ctx, m)):
                 res.append(o)
                 break
         else:
@@ -844,7 +846,21 @@ def _utilise_uv(nt, atteints):
     return False
 
 
-def _groupes_uv(ctx, o):
+def _utilise_uv_image(nt, atteints):
+    """Une texture image atteinte par la sortie est placée par des UV (projection plate)."""
+    for n in nt.nodes:
+        if n.name not in atteints or n.type != "TEX_IMAGE" or n.image is None or n.projection != "FLAT":
+            continue
+        if not n.inputs["Vector"].is_linked:
+            return True
+        amont = _amont([n])
+        for a in nt.nodes:
+            if a.name in amont and (a.type == "UVMAP" or (a.type == "TEX_COORD" and a.outputs["UV"].is_linked)):
+                return True
+    return False
+
+
+def _groupes_uv(ctx, o, p=None):
     """(matériau, masque des faces) pour chaque matériau de l'objet qui utilise des UV."""
     st = _uv_stats(ctx, o)
     if st is None:
@@ -852,7 +868,8 @@ def _groupes_uv(ctx, o):
     groupes = {}
     for i, s in enumerate(o.material_slots):
         m = s.material
-        if m is not None and m.node_tree is not None and _utilise_uv(m.node_tree, _atteints_mat(ctx, m)):
+        test = _utilise_uv_image if (p or {}).get("seulement_textures_image") else _utilise_uv
+        if m is not None and m.node_tree is not None and test(m.node_tree, _atteints_mat(ctx, m)):
             masque = st["mi"] == i
             if masque.any():
                 if m.name in groupes:
@@ -867,9 +884,9 @@ def _groupes_uv(ctx, o):
        "les textures seront écrasées en une couleur unique ou mal placées.",
        "Édition, tout sélectionner, U > Dépliage (ou Projection intelligente) ; "
        "ou changer les coordonnées du matériau (Générées, Objet, projection Boîte).",
-       famille="UV")
+       famille="UV", seulement_textures_image=False)
 def r_uv(ctx, p):
-    for o in _objets_uv(ctx, {}):
+    for o in _objets_uv(ctx, {"seulement_textures_image": p["seulement_textures_image"]}):
         if not o.data.uv_layers:
             yield ("OBJET", o.name, "aucune carte UV, alors qu'un de ses matériaux en utilise une")
 
@@ -879,12 +896,12 @@ def r_uv(ctx, p):
        "la texture y apparaît comme une couleur unique ou des traînées.",
        "Édition : sélectionner les faces du matériau (Propriétés > Matériau > Sélectionner), U > Dépliage "
        "ou Projection intelligente, puis vérifier dans l'éditeur UV.",
-       famille="UV", part_partielle=0.1, niveau_partiel="avertissement")
+       famille="UV", part_partielle=0.1, niveau_partiel="avertissement", seulement_textures_image=False)
 def r_uv_ecrasees(ctx, p):
-    for o in _objets_uv(ctx, {}):
+    for o in _objets_uv(ctx, {"seulement_textures_image": p["seulement_textures_image"]}):
         if not o.data.uv_layers:
             continue
-        st, groupes = _groupes_uv(ctx, o)
+        st, groupes = _groupes_uv(ctx, o, p)
         for m, masque in groupes:
             a3 = st["a3"][masque]
             total = a3.sum()
@@ -1166,6 +1183,474 @@ def r_racine(ctx, p):
     racine = [o.name for o in ctx["scene"].collection.objects if o.library is None]
     if len(racine) > p["max_objets"]:
         yield ("OBJETS", "\t".join(racine), f"{len(racine)} objet(s) à la racine : {_liste(racine)}")
+
+
+# =========================================================================
+# Poids et géométrie : proportionner la scène à ce que voient les caméras
+# =========================================================================
+
+def _cameras(ctx, p):
+    sc = ctx["scene"]
+    if p.get("cameras", "toutes") == "active":
+        return [sc.camera] if sc.camera else []
+    return [o for o in _objets(sc) if o.type == "CAMERA"]
+
+
+def _taille_image_rendue(sc):
+    r = sc.render
+    return r.resolution_x * r.resolution_percentage / 100.0, r.resolution_y * r.resolution_percentage / 100.0
+
+
+def _couverture(ctx, o, cams):
+    """(aire en px², plus grand côté en px, caméra) de la boîte englobante de l'objet,
+    pour la caméra qui le voit le plus grand. None si aucune caméra ne le voit."""
+    from bpy_extras.object_utils import world_to_camera_view
+    cache = ctx.setdefault("_couv", {})
+    cle = (o.name, tuple(c.name for c in cams))
+    if cle in cache:
+        return cache[cle]
+    sc = ctx["scene"]
+    W, H = _taille_image_rendue(sc)
+    eo = o.evaluated_get(ctx["depsgraph"])
+    coins = [eo.matrix_world @ Vector(c) for c in eo.bound_box]
+    meilleur = None
+    for cam in cams:
+        pts = [world_to_camera_view(sc, cam, c) for c in coins]
+        devant = [q for q in pts if q.z > 0]
+        if not devant:
+            continue
+        if len(devant) < len(pts):          # l'objet entoure la caméra : il remplit le cadre
+            x0, y0, x1, y1 = 0.0, 0.0, 1.0, 1.0
+        else:
+            x0 = max(0.0, min(q.x for q in pts)); x1 = min(1.0, max(q.x for q in pts))
+            y0 = max(0.0, min(q.y for q in pts)); y1 = min(1.0, max(q.y for q in pts))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        dx, dy = (x1 - x0) * W, (y1 - y0) * H
+        if meilleur is None or dx * dy > meilleur[0]:
+            meilleur = (dx * dy, max(dx, dy), cam.name)
+    cache[cle] = meilleur
+    return meilleur
+
+
+def _px_par_m_proche(ctx, o, cams):
+    """Pixels par mètre au point de l'objet le plus proche d'une caméra en perspective (borne haute)."""
+    sc = ctx["scene"]
+    W, _ = _taille_image_rendue(sc)
+    eo = o.evaluated_get(ctx["depsgraph"])
+    coins = [eo.matrix_world @ Vector(c) for c in eo.bound_box]
+    meilleur = 0.0
+    for cam in cams:
+        if cam.data.type != "PERSP":
+            continue
+        capteur = cam.data.sensor_width if cam.data.sensor_fit != "VERTICAL" else cam.data.sensor_height
+        f_px = cam.data.lens / max(capteur, 1e-6) * W
+        pc = cam.matrix_world.translation
+        visee = -(cam.matrix_world.to_3x3() @ Vector((0, 0, 1)))
+        profondeurs = [(c - pc).dot(visee) for c in coins]
+        devant = [d for d in profondeurs if d > 0.05]
+        if devant:
+            meilleur = max(meilleur, f_px / min(devant))
+    return meilleur
+
+
+def _total_faces(ctx):
+    """Faces de la scène visibles au rendu, modificateurs et instances (collections, Geometry Nodes) compris."""
+    if "_total_faces" in ctx:
+        return ctx["_total_faces"]
+    total = sum(_faces_evaluees(ctx, o) for o in _rendus(ctx))
+    for inst in ctx["depsgraph"].object_instances:
+        if inst.is_instance and inst.object.type == "MESH" and inst.object.data is not None:
+            total += len(inst.object.data.polygons)
+    ctx["_total_faces"] = total
+    return total
+
+
+def _faces_evaluees(ctx, o):
+    cache = ctx.setdefault("_faces", {})
+    if o.name not in cache:
+        eo = o.evaluated_get(ctx["depsgraph"])
+        me = eo.data if eo.type == "MESH" else None
+        cache[o.name] = len(me.polygons) if me is not None else 0
+    return cache[o.name]
+
+
+def _echelle_mapping(nt, tex):
+    """Facteur de répétition d'un node Mapping en amont de la texture (produit des échelles X et Y)."""
+    amont = _amont([tex])
+    f = 1.0
+    for n in nt.nodes:
+        if n.name in amont and n.type == "MAPPING" and not n.inputs["Scale"].is_linked:
+            s = n.inputs["Scale"].default_value
+            f *= max(abs(s[0]), 1e-6) * max(abs(s[1]), 1e-6)
+    return f
+
+
+def _fmt_px(x):
+    return f"{int(round(x))} px"
+
+
+def _mil(x):
+    """Entier avec espace des milliers."""
+    return f"{int(x):,}".replace(",", " ")
+
+
+@regle("texture_surdimensionnee", "Texture surdimensionnée", "conseil",
+       "Une texture plus fine que ce que la caméra peut afficher alourdit le fichier et la mémoire sans rien "
+       "ajouter à l'image : un objet de 1 m vu à 20 m n'occupe qu'une centaine de pixels, une texture 8k y est "
+       "invisible.",
+       "Réduire l'image dans un logiciel de retouche (ou en choisir une version plus petite : 1k, 2k) à la "
+       "résolution indiquée, puis la recharger (Image > Recharger). Garder la grande version pour les gros plans.",
+       famille="Poids", facteur_max=4.0, taille_min=2048, cameras="toutes")
+def r_texture_surdim(ctx, p):
+    cams = _cameras(ctx, p)
+    if not cams:
+        return
+    besoins = {}   # image -> (besoin px, objet, caméra)
+    hors_champ = {}
+    for nom, (m, objs) in ctx["mats"].items():
+        nt = m.node_tree
+        att = _atteints_mat(ctx, m)
+        texs = [n for n in nt.nodes if n.name in att and n.type == "TEX_IMAGE" and n.image is not None
+                and n.image.source in ("FILE", "TILED", "GENERATED") and max(n.image.size) >= p["taille_min"]]
+        if not texs:
+            continue
+        for o in objs:
+            if o.type != "MESH" or o.hide_render:
+                continue
+            couv = _couverture(ctx, o, cams)
+            for tex in texs:
+                img = tex.image
+                if couv is None:
+                    hors_champ.setdefault(img.name, set()).add(o.name)
+                    continue
+                eo = o.evaluated_get(ctx["depsgraph"])
+                taille_m = max(max(eo.dimensions), 1e-6)
+                px_par_m = max(couv[1] / taille_m, min(_px_par_m_proche(ctx, o, cams), couv[1] * 4 / taille_m))
+                st = _uv_stats(ctx, o)
+                a3, a_uv = None, None
+                if st is not None and st["a3"].sum() > 0:
+                    idx = [i for i, s in enumerate(o.material_slots) if s.material == m]
+                    masque = np.isin(st["mi"], idx)
+                    if masque.any() and st.get("uv") is not None and tex.projection == "FLAT":
+                        a3 = float(st["a3"][masque].sum())
+                        a_uv = float(st["auv"][masque].sum())
+                f = _echelle_mapping(nt, tex)
+                if a3 and a_uv and a_uv > 1e-9:
+                    besoin = px_par_m * math.sqrt(a3 / (a_uv * f))   # pixels d'écran par répétition de la texture
+                else:
+                    besoin = couv[1] / math.sqrt(f)                  # texture étalée sur l'objet
+                if img.name not in besoins or besoin > besoins[img.name][0]:
+                    besoins[img.name] = (besoin, o.name, couv[2])
+    for nom, (besoin, obj, cam) in besoins.items():
+        img = bpy.data.images[nom]
+        taille = max(img.size)
+        facteur = taille / max(besoin, 1.0)
+        if facteur > p["facteur_max"]:
+            conseil = 1 << max(8, math.ceil(math.log2(besoin * 2)))   # puissance de 2, avec une marge × 2
+            yield ("OBJET", obj, f"« {nom} » : {img.size[0]} × {img.size[1]} px pour un besoin d'environ "
+                                 f"{_fmt_px(besoin)} (caméra « {cam} ») : {_n(facteur, 0)} fois trop grande ; "
+                                 f"{conseil} px suffiraient")
+    for nom, objs in hors_champ.items():
+        if nom not in besoins:
+            img = bpy.data.images[nom]
+            yield ("OBJETS", "\t".join(sorted(objs)), f"« {nom} » ({img.size[0]} × {img.size[1]} px) : "
+                                                      f"sur des objets qu'aucune caméra ne voit ({_liste(sorted(objs))})")
+
+
+@regle("densite_polygones", "Trop de polygones pour ce que voit la caméra", "conseil",
+       "Un objet très détaillé qui n'occupe que quelques pixels à l'image alourdit le fichier, la mémoire et "
+       "l'affichage sans rien apporter au rendu. Au-delà de quelques millions de faces, la scène devient "
+       "pénible à manipuler sur un portable.",
+       "Réduire le détail des objets lointains : moins de subdivisions (modificateur Subdivision, niveau de rendu), "
+       "modificateur Décimer, ou une version simplifiée de l'objet. Garder le détail pour les gros plans.",
+       famille="Poids", faces_par_px=2.0, faces_min=20000, total_max=3000000, cameras="toutes")
+def r_densite(ctx, p):
+    cams = _cameras(ctx, p)
+    for o in _rendus(ctx):
+        f = _faces_evaluees(ctx, o)
+        if f < p["faces_min"] or not cams:
+            continue
+        couv = _couverture(ctx, o, cams)
+        if couv is None:
+            yield ("OBJET", o.name, f"{_mil(f)} faces sur un objet qu'aucune caméra ne voit")
+            continue
+        d = f / max(couv[0], 1.0)
+        if d > p["faces_par_px"]:
+            yield ("OBJET", o.name, f"{_mil(f)} faces pour environ {_mil(couv[0])} px² à l'image (caméra « {couv[2]} ») : "
+                                    f"{_n(d, 1)} face(s) par pixel")
+    total = _total_faces(ctx)
+    if p["total_max"] and total > p["total_max"]:
+        yield ("SCENE", "Scène", f"{_mil(total)} faces au total, instances comprises (seuil : {_mil(p['total_max'])})")
+
+
+def _signature(o):
+    """Même géométrie (sommets et ordre des faces), même échelle, mêmes matériaux, mêmes modificateurs."""
+    me = o.data
+    n = len(me.vertices)
+    if n == 0 or n > 300000:
+        return None
+    co = np.empty(n * 3, dtype=np.float32); me.vertices.foreach_get("co", co)
+    lv = np.empty(len(me.loops), dtype=np.int32); me.loops.foreach_get("vertex_index", lv)
+    echelle = tuple(round(x, 3) for x in o.scale)
+    mats = tuple(s.material.name if s.material else "" for s in o.material_slots)
+    mods = tuple(m.type for m in o.modifiers)
+    return (n, len(me.polygons), hash(np.round(co, 4).tobytes()), hash(lv.tobytes()), echelle, mats, mods)
+
+
+@regle("copies_non_liees", "Copies non liées", "conseil",
+       "Des objets identiques dupliqués avec Maj+D ont chacun leur propre maillage : le fichier stocke autant "
+       "de copies que d'objets, et une modification doit être refaite sur chacun.",
+       "Dupliquer avec Alt+D (copie liée) ; pour lier des copies existantes : sélectionner les copies, puis "
+       "en dernier l'objet modèle, Ctrl+L > Lier les données d'objet (Link Object Data).",
+       famille="Poids", groupe_min=3)
+def r_copies(ctx, p):
+    groupes = {}
+    for o in _objets(ctx["scene"]):
+        if o.type != "MESH" or o.data is None or o.data.library is not None:
+            continue
+        sig = _signature(o)
+        if sig is None:
+            continue
+        groupes.setdefault(sig, {}).setdefault(o.data.name, []).append(o.name)
+    for sig, par_maillage in groupes.items():
+        if len(par_maillage) >= p["groupe_min"]:
+            objs = sorted(n for noms in par_maillage.values() for n in noms)
+            yield ("OBJETS", "\t".join(objs), f"{len(par_maillage)} maillages identiques ({sig[1]} faces chacun) "
+                                              f"au lieu d'un seul : {_liste(objs)}")
+
+
+def _images_atteintes(ctx):
+    res = set()
+    for nom, (m, objs) in ctx["mats"].items():
+        att = _atteints_mat(ctx, m)
+        for n in m.node_tree.nodes:
+            if n.name in att and n.type == "TEX_IMAGE" and n.image is not None:
+                res.add(n.image.name)
+    w = ctx["scene"].world
+    if w and w.node_tree:
+        for n in w.node_tree.nodes:
+            if n.type in ("TEX_ENVIRONMENT", "TEX_IMAGE") and n.image is not None:
+                res.add(n.image.name)
+    return res
+
+
+def _memoire_image(img):
+    w, h = img.size
+    return w * h * 4 * (4 if img.is_float else 1)
+
+
+@regle("donnees_inutilisees", "Données inutilisées gardées dans le fichier", "conseil",
+       "Images, matériaux ou maillages gardés sans servir alourdissent le fichier et brouillent les listes. "
+       "Blender les conserve quand ils sont protégés (bouclier « faux utilisateur ») ou restent branchés à des "
+       "nodes qui ne mènent nulle part.",
+       "Fichier > Nettoyer > Données orphelines récursives (File > Clean Up > Purge Unused Data) ; pour une donnée "
+       "protégée, retirer le bouclier dans le sélecteur, puis nettoyer. Supprimer aussi les nodes d'image non reliés.",
+       famille="Poids")
+def r_inutilisees(ctx, p):
+    atteintes = _images_atteintes(ctx)
+    imgs = [i for i in bpy.data.images if i.library is None and i.type in ("IMAGE", "UV_TEST") and i.users > 0
+            and i.name not in atteintes and i.source in ("FILE", "TILED", "GENERATED")]
+    if imgs:
+        mo = sum(_memoire_image(i) for i in imgs) / 2 ** 20
+        emballe = sum(1 for i in imgs if i.packed_file is not None)
+        detail = f"{len(imgs)} image(s) qui ne servent à aucun rendu ({_liste([i.name for i in imgs])}), environ {_n(mo, 0)} Mo en mémoire"
+        if emballe:
+            detail += f", dont {emballe} empaquetée(s) dans le fichier"
+        yield ("SCENE", "Images", detail)
+    proteges = [x.name for coll in (bpy.data.materials, bpy.data.meshes, bpy.data.node_groups)
+                for x in coll if x.library is None and x.use_fake_user and x.users <= 1]
+    if proteges:
+        yield ("SCENE", "Données", f"{len(proteges)} donnée(s) gardées seulement par le bouclier : {_liste(proteges)}")
+    for o in _objets(ctx["scene"]):
+        if o.type != "MESH" or not o.material_slots or o.data is None or not len(o.data.polygons):
+            continue
+        mi = np.empty(len(o.data.polygons), dtype=np.int64)
+        o.data.polygons.foreach_get("material_index", mi)
+        utilises = set(np.unique(mi).tolist())
+        vides = [s.material.name for i, s in enumerate(o.material_slots) if s.material and i not in utilises]
+        if vides:
+            yield ("OBJET", o.name, f"matériau(x) attribué(s) à aucune face : {_liste(vides)}")
+
+
+@regle("geometrie", "Géométrie à reprendre", "conseil",
+       "Des normales inversées assombrissent ou font disparaître des faces (et faussent le Line Art et le cel "
+       "shading) ; des sommets en double créent des arêtes dures et des artefacts d'ombre ; des faces non planes "
+       "se plient de façon imprévisible au rendu.",
+       "Mode Édition, tout sélectionner (A) : Maillage > Normales > Recalculer à l'extérieur (Maj+N) ; "
+       "Maillage > Nettoyer > Fusionner par distance (M) ; pour les faces non planes : Maillage > Nettoyer > "
+       "Rendre planes, ou trianguler (Ctrl+T).",
+       famille="Objets", tolerance_doublons=0.0001, ecart_planeite=0.02, sommets_max=500000)
+def r_geometrie(ctx, p):
+    for o in _rendus(ctx):
+        me = o.data
+        nv, nf, nl = len(me.vertices), len(me.polygons), len(me.loops)
+        if nv == 0 or nf == 0 or nv > p["sommets_max"]:
+            continue
+        problemes = []
+        co = np.empty(nv * 3, dtype=np.float64); me.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+        # sommets en double
+        q = np.round(co / p["tolerance_doublons"]).astype(np.int64)
+        _, inv, cnt = np.unique(q, axis=0, return_inverse=True, return_counts=True)
+        doublons = int((cnt - 1)[cnt > 1].sum())
+        if doublons:
+            problemes.append(f"{doublons} sommet(s) en double")
+        # orientation des faces (normales incohérentes ou inversées)
+        ls = np.empty(nf, dtype=np.int64); me.polygons.foreach_get("loop_start", ls)
+        lt = np.empty(nf, dtype=np.int64); me.polygons.foreach_get("loop_total", lt)
+        lv = np.empty(nl, dtype=np.int64); me.loops.foreach_get("vertex_index", lv)
+        nxt = np.arange(nl) + 1; nxt[ls + lt - 1] = ls
+        a, b = lv, lv[nxt]
+        orientees = a.astype(np.int64) * (nv + 1) + b
+        _, c_or = np.unique(orientees, return_counts=True)
+        incoherentes = int((c_or > 1).sum())
+        if incoherentes:
+            problemes.append(f"{incoherentes} arête(s) entre faces d'orientation opposée (normales incohérentes)")
+        else:
+            aretes = np.minimum(a, b).astype(np.int64) * (nv + 1) + np.maximum(a, b)
+            _, c_ar = np.unique(aretes, return_counts=True)
+            if (c_ar == 2).all():                       # volume fermé : le signe du volume donne le sens
+                poly = np.repeat(np.arange(nf), lt)
+                debut = co[lv[np.repeat(ls, lt)]]
+                p1, p2 = co[a], co[b]
+                vol = float(np.einsum("ij,ij->i", debut, np.cross(p1, p2)).sum()) / 6.0
+                if vol < 0:
+                    problemes.append("normales inversées (tournées vers l'intérieur du volume)")
+        # faces non planes (quadrilatères et n-gones)
+        grand = lt >= 4
+        if grand.any():
+            nrm = np.empty(nf * 3); me.polygons.foreach_get("normal", nrm); nrm = nrm.reshape(-1, 3)
+            ctr = np.empty(nf * 3); me.polygons.foreach_get("center", ctr); ctr = ctr.reshape(-1, 3)
+            ar = np.empty(nf); me.polygons.foreach_get("area", ar)
+            poly = np.repeat(np.arange(nf), lt)
+            dist = np.abs(np.einsum("ij,ij->i", co[lv] - ctr[poly], nrm[poly]))
+            dmax = np.zeros(nf); np.maximum.at(dmax, poly, dist)
+            ratio = dmax / np.sqrt(np.maximum(ar, 1e-12))
+            np_ = int(((ratio > p["ecart_planeite"]) & grand).sum())
+            if np_:
+                problemes.append(f"{np_} face(s) non plane(s)")
+        if problemes:
+            yield ("OBJET", o.name, " ; ".join(problemes))
+
+
+@regle("poids_fichier", "Poids du fichier", "acquis",
+       "Un fichier maîtrisé est un fichier léger : il s'ouvre, s'enregistre et se partage vite, et tient dans "
+       "la mémoire d'un portable.",
+       "Voir les règles « Texture surdimensionnée », « Trop de polygones », « Copies non liées » et "
+       "« Données inutilisées » : ce sont elles qui expliquent le poids.",
+       famille="Poids", fichier_max_mo=0.0, textures_max_mo=0.0, faces_max=0)
+def r_poids(ctx, p):
+    taille = os.path.getsize(bpy.data.filepath) / 2 ** 20 if bpy.data.filepath and os.path.isfile(bpy.data.filepath) else None
+    atteintes = _images_atteintes(ctx)
+    tex_mo = sum(_memoire_image(bpy.data.images[n]) for n in atteintes if n in bpy.data.images) / 2 ** 20
+    total = _total_faces(ctx)
+    morceaux = [f"fichier : {_n(taille, 1)} Mo" if taille is not None else "fichier non enregistré",
+                f"{_mil(total)} faces (instances comprises)",
+                f"textures utilisées : environ {_n(tex_mo, 0)} Mo en mémoire"]
+    depasse = ((p["fichier_max_mo"] and taille and taille > p["fichier_max_mo"])
+               or (p["textures_max_mo"] and tex_mo > p["textures_max_mo"])
+               or (p["faces_max"] and total > p["faces_max"]))
+    yield ("SCENE", "Fichier", " · ".join(morceaux), "avertissement" if depasse else "acquis")
+
+# =========================================================================
+# Livrables et rendu non réaliste
+# =========================================================================
+
+_NOMS_CAMERA = re.compile(r"^(?:Camera|Caméra)(?:\.\d{3})?$")
+
+
+@regle("cameras_nommees", "Caméras des images à rendre", "bloquant",
+       "Chaque image demandée doit avoir sa caméra, nommée d'après l'image : on retrouve et on refait "
+       "le rendu sans chercher, et l'enseignant sait quelle vue correspond à quelle image.",
+       "Ajouter une caméra par image (Ajouter > Caméra), la cadrer, puis la renommer dans l'Outliner "
+       "(« CAM_mixte », « CAM_variante »).",
+       actif=False, famille="Caméras", minimum=2)
+def r_cameras_nommees(ctx, p):
+    cams = [o for o in _objets(ctx["scene"]) if o.type == "CAMERA"]
+    nommees = [o.name for o in cams if not _NOMS_CAMERA.match(o.name)]
+    if len(nommees) < p["minimum"]:
+        anonymes = [o.name for o in cams if _NOMS_CAMERA.match(o.name)]
+        detail = f"{len(nommees)} caméra(s) nommée(s) sur {p['minimum']} attendue(s)"
+        if anonymes:
+            detail += f" ; au nom par défaut : {_liste(anonymes)}"
+        yield ("SCENE", "Caméras", detail)
+    else:
+        yield ("SCENE", "Caméras", f"{len(nommees)} caméras nommées : {_liste(nommees)}", "acquis")
+
+
+def _techniques_non_realistes(ctx):
+    """[(type_cible, cible, technique)] des modes de rendu non réalistes présents dans la scène."""
+    sc = ctx["scene"]
+    res = []
+    if sc.render.use_freestyle:
+        res.append(("SCENE", "Rendu", "Freestyle (contours)"))
+    for o in _objets(sc):
+        for m in getattr(o, "modifiers", []):
+            t = m.type
+            if t == "WIREFRAME" and o.type == "MESH":
+                res.append(("OBJET", o.name, "modificateur Filaire (Wireframe)"))
+            elif t in ("LINEART", "GREASE_PENCIL_LINEART") or "LINEART" in t:
+                res.append(("OBJET", o.name, "Line Art"))
+            elif t == "SOLIDIFY" and o.type == "MESH" and m.use_flip_normals:
+                res.append(("OBJET", o.name, "contour par coque inversée (Solidify inversé)"))
+        for m in getattr(o, "grease_pencil_modifiers", []) or []:
+            if "LINEART" in m.type:
+                res.append(("OBJET", o.name, "Line Art"))
+    for nom, (m, objs) in ctx["mats"].items():
+        types = {n.type for n in m.node_tree.nodes if n.name in _atteints_mat(ctx, m)}
+        if "SHADER_TO_RGB" in types:
+            res.append(("MATERIAU", nom, "cel shading (Shader vers RVB)"))
+        if "BSDF_TOON" in types:
+            res.append(("MATERIAU", nom, "shader Toon"))
+        if "WIREFRAME" in types:
+            res.append(("MATERIAU", nom, "node Filaire (Wireframe)"))
+    return res
+
+
+@regle("rendu_non_realiste", "Rendu non réaliste", "acquis",
+       "L'image doit associer des matériaux PBR et au moins un mode de représentation non réaliste.",
+       "Ajouter un mode non réaliste : Freestyle (Propriétés > Rendu), un objet Line Art, un modificateur "
+       "Filaire, ou un matériau en cel shading (Shader vers RVB suivi d'une Color Ramp constante).",
+       actif=False, famille="Rendu", niveau_si_absent="avertissement")
+def r_non_realiste(ctx, p):
+    trouves = _techniques_non_realistes(ctx)
+    if not trouves:
+        yield ("SCENE", "Rendu", "aucun mode de rendu non réaliste détecté", p["niveau_si_absent"])
+    for cible_type, cible, technique in trouves:
+        yield (cible_type, cible, technique)
+
+
+# =========================================================================
+# Journal de travail
+# =========================================================================
+
+@regle("journal_travail", "Journal de travail", "avertissement",
+       "Le journal retrace l'histoire du fichier : quand il a été enregistré, comment il a grossi, sur "
+       "quelles machines. Il aide à retrouver l'arrivée d'un problème et, dans un cadre d'évaluation, "
+       "montre que le travail s'est construit dans le temps.",
+       "Garder DiagScene installé et le journal activé (Préférences > Add-ons > DiagScene) pendant tout le "
+       "travail, et enregistrer régulièrement (Ctrl+S).",
+       actif=False, famille="Journal", min_jours=2, min_enregistrements=5, niveau_absent="bloquant",
+       niveau_altere="avertissement")
+def r_journal(ctx, p):
+    from . import journal
+    if not journal.actif():
+        yield ("SCENE", "Journal", "journal désactivé dans les préférences de DiagScene", p["niveau_absent"])
+    s = journal.synthese()
+    if s is None:
+        yield ("SCENE", "Journal", "aucun journal dans ce fichier (il commence au prochain enregistrement)",
+               p["niveau_absent"])
+        return
+    for pb in s["problemes"]:
+        yield ("SCENE", "Journal", f"journal altéré : {pb}", p["niveau_altere"])
+    if len(s["jours"]) < p["min_jours"]:
+        yield ("SCENE", "Journal", f"travail enregistré sur {len(s['jours'])} jour(s) "
+                                   f"(attendu : au moins {p['min_jours']})")
+    if s["enregistrements"] < p["min_enregistrements"]:
+        yield ("SCENE", "Journal", f"{s['enregistrements']} enregistrement(s) journalisé(s) "
+                                   f"(attendu : au moins {p['min_enregistrements']})")
+    if s["integre"] and len(s["jours"]) >= p["min_jours"] and s["enregistrements"] >= p["min_enregistrements"]:
+        yield ("SCENE", "Journal", f"{s['enregistrements']} enregistrements sur {len(s['jours'])} jours", "acquis")
 
 
 # =========================================================================

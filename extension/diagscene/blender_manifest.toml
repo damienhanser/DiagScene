@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "diagscene"
-version = "1.1.0"
+version = "1.2.0"
 name = "DiagScene"
 tagline = "Diagnostic pedagogique d'un fichier, sans rien corriger"
 maintainer = "Damien Hanser"
@@ -15,4 +15,4 @@ license = ["SPDX:GPL-3.0-or-later"]
 copyright = ["2026 Damien Hanser"]
 
 [permissions]
-files = "Ecrire le rapport d'analyse a cote du fichier blend"
+files = "Ecrire le rapport et lire la configuration choisie"

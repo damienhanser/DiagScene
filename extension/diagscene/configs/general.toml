@@ -136,6 +136,7 @@ attendues = ["noise", "color_ramp", "mix_pilote"]
 # --- UV (seuils à calibrer) --------------------------------------------
 [regles.uv_manquantes]
 niveau = "bloquant"
+seulement_textures_image = false  # true : seulement là où une texture image est placée par des UV
 
 [regles.uv_ecrasees]
 niveau = "bloquant"
@@ -182,6 +183,56 @@ px_par_1024 = 8
 actif = false
 [regles.bake_cage]
 actif = false
+
+# --- Poids : proportionner la scène à ce que voient les caméras ----------
+[regles.texture_surdimensionnee]
+niveau = "conseil"
+facteur_max = 4.0                # texture plus de 4 fois plus fine que son affichage : signalée
+taille_min = 2048                # en pixels : les images plus petites ne sont pas examinées
+cameras = "toutes"               # "toutes" ou "active"
+
+[regles.densite_polygones]
+niveau = "conseil"
+faces_par_px = 2.0               # faces par pixel de la boîte englobante à l'image
+faces_min = 20000                # objets plus légers ignorés
+total_max = 3000000              # faces de la scène, instances comprises (0 : pas de seuil)
+cameras = "toutes"
+
+[regles.copies_non_liees]
+niveau = "conseil"
+groupe_min = 3                   # à partir de 3 maillages identiques non liés
+
+[regles.donnees_inutilisees]
+niveau = "conseil"
+
+[regles.poids_fichier]           # information (« acquis ») ; avertissement au-delà d'un seuil (0 : sans seuil)
+fichier_max_mo = 0.0
+textures_max_mo = 0.0
+faces_max = 0
+
+# --- Géométrie ---------------------------------------------------------
+[regles.geometrie]
+niveau = "conseil"
+tolerance_doublons = 0.0001      # en mètres
+ecart_planeite = 0.02            # écart au plan rapporté à la taille de la face
+sommets_max = 500000             # objets plus lourds ignorés (temps d'analyse)
+
+# --- Livrables et non réaliste (inactifs ici, à activer dans une grille) -
+[regles.cameras_nommees]
+actif = false
+minimum = 2
+
+[regles.rendu_non_realiste]
+actif = false
+niveau_si_absent = "avertissement"
+
+# --- Journal de travail (inactif ici, à activer dans une grille) -------
+[regles.journal_travail]
+actif = false
+min_jours = 2
+min_enregistrements = 5
+niveau_absent = "bloquant"
+niveau_altere = "avertissement"
 
 # --- Organisation ------------------------------------------------------
 [regles.noms_par_defaut]

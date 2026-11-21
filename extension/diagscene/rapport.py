@@ -9,6 +9,7 @@ import re
 
 import bpy
 
+from . import journal
 from .regles import NIVEAUX
 
 TITRES = {"bloquant": "Bloquants", "avertissement": "Avertissements", "conseil": "Conseils", "acquis": "Acquis"}
@@ -49,6 +50,35 @@ def _historique(dossier, base):
     return lignes
 
 
+def _section_journal(max_lignes=20):
+    entrees = journal.lire()
+    s = journal.synthese(entrees)
+    l = ["## Journal de travail (historique du fichier)", ""]
+    if s is None:
+        etat = "désactivé dans les préférences" if not journal.actif() else "vide (il commence au prochain enregistrement)"
+        return l + [f"Journal {etat}.", ""]
+    l += [f"- **{s['enregistrements']} enregistrement(s)** et {s['analyses']} analyse(s), "
+          f"du {s['premiere']['date'][:16]} au {s['derniere']['date'][:16]}, sur {len(s['jours'])} jour(s).",
+          f"- **Machines** (empreintes anonymes) : {', '.join(s['machines'])} ; machine actuelle : {s['machine_courante']}.",
+          f"- **Versions de Blender** : {', '.join(s['versions'])}.",
+          f"- **Intégrité** : " + ("chaîne intacte." if s["integre"] else "journal altéré : " + " ; ".join(s["problemes"]) + "."),
+          f"- **Dernière empreinte** : `{s['derniere'].get('hash', '')}` (à comparer avec le rapport suivant).", ""]
+    l += ["| N° | Date | Événement | Faces | Objets | Matériaux | Images | Poids (Ko) | Machine | Thématique |",
+          "| ---: | :--- | :--- | ---: | ---: | ---: | ---: | ---: | :--- | :--- |"]
+    lisibles = [e for e in entrees if "illisible" not in e]
+    if len(lisibles) > max_lignes:
+        l.append(f"| … | | {len(lisibles) - max_lignes} ligne(s) plus ancienne(s) | | | | | | | |")
+    for e in lisibles[-max_lignes:]:
+        th = (e.get("thematique") or "").replace("|", "/")
+        if e.get("config_sha"):
+            th += f" ({e['config_sha']})"
+        l.append(f"| {e.get('n', '')} | {e.get('date', '')[:16]} | {e.get('evt', '')} | {e.get('faces', '')} "
+                 f"| {e.get('objets', '')} | {e.get('materiaux', '')} | {e.get('images', '')} | {e.get('poids_ko', '')} "
+                 f"| {e.get('machine', '')} | {th} |")
+    l += ["", "*Poids : taille du fichier sur le disque au moment de l'événement, avant l'enregistrement en cours.*", ""]
+    return l
+
+
 def ecrire(alertes, config, version_extension):
     chemin = bpy.data.filepath
     if not chemin:
@@ -72,6 +102,7 @@ def ecrire(alertes, config, version_extension):
          f"extension: {version_extension}",
          f"thematique: {q(meta.get('nom', ''), ensure_ascii=False)}",
          f"thematique_version: {q(str(meta.get('version', '')), ensure_ascii=False)}",
+         f"thematique_empreinte: {q(meta.get('sha', ''))}",
          f"bloquants: {compte['bloquant']}",
          f"avertissements: {compte['avertissement']}",
          f"conseils: {compte['conseil']}",
@@ -106,6 +137,7 @@ def ecrire(alertes, config, version_extension):
             l.append(f"- **{cible}** : {a['detail']}" if cible else f"- {a['detail']}")
         l.append("")
 
+    l += _section_journal()
     l += ["## Évolution", "",
           "| Date | Fichier | Bloquants | Avertissements | Conseils | Acquis |",
           "| :--- | :--- | ---: | ---: | ---: | ---: |"]
@@ -115,7 +147,7 @@ def ecrire(alertes, config, version_extension):
     l.append(f"| **{maintenant:%Y-%m-%d %H:%M}** | **{os.path.basename(chemin).replace('|', '/')}** "
              f"| **{compte['bloquant']}** | **{compte['avertissement']}** | **{compte['conseil']}** | **{compte['acquis']}** |")
     l += ["", f"*Rapport produit par l'extension DiagScene {version_extension}. "
-              f"Elle lit le fichier sans jamais le modifier.*", ""]
+              f"Elle ne corrige rien ; elle ajoute seulement une ligne au journal de travail du fichier.*", ""]
 
     nom = f"{maintenant:%Y-%m-%d_%H%M}_{stem}.md"
     sortie = os.path.join(dossier, nom)

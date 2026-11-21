@@ -2,6 +2,7 @@
 """Lecture des fichiers de configuration (un fichier TOML par thématique)."""
 
 import glob
+import hashlib
 import os
 import tomllib
 
@@ -10,12 +11,14 @@ DOSSIER = os.path.join(os.path.dirname(__file__), "configs")
 
 def charger(chemin):
     with open(chemin, "rb") as f:
-        data = tomllib.load(f)
+        brut = f.read()
+    data = tomllib.loads(brut.decode("utf-8"))
     meta = data.setdefault("meta", {})
     meta.setdefault("nom", os.path.splitext(os.path.basename(chemin))[0])
     meta.setdefault("version", "")
     meta.setdefault("ordre", 50)
     meta["fichier"] = chemin
+    meta["sha"] = hashlib.sha256(brut).hexdigest()[:12]  # empreinte : repère un fichier modifié
     data.setdefault("regles", {})
     return data
 
