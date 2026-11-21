@@ -27,7 +27,7 @@ Avant toute diffusion : l'extension « Diagnostic de fichier » (`diagnostic_fic
 Traçabilité et évaluations externes.
 - **Journal de travail** dans le fichier .blend (bloc de texte caché « .diagscene_journal ») : une ligne à chaque enregistrement et à chaque analyse (date, version de Blender, objets, faces, matériaux, images, poids du fichier, empreinte anonyme de la machine, thématique et empreinte de la configuration). Lignes chaînées par empreinte : une ligne modifiée ou supprimée se repère. Désactivable dans les préférences de l'extension. Sert à retrouver l'arrivée d'un problème (projets personnels) et d'indice d'authenticité (évaluations).
 - **Rapport** : section « Journal de travail (historique du fichier) », empreinte de la configuration dans l'en-tête.
-- **Configurations externes** : « Charger un fichier .toml… » ; le dernier fichier chargé est mémorisé dans les préférences et proposé en tête de liste. Les grilles d'évaluation ne sont plus livrées avec l'extension : elles sont fournies à part (dossier `evaluations/` du dépôt).
+- **Configurations externes** : « Charger un fichier .toml… » ; le dernier fichier chargé est mémorisé dans les préférences et proposé en tête de liste. Les grilles d'évaluation ne sont plus livrées avec l'extension : elles sont fournies à part par l'enseignant, hors du dépôt.
 - **Nouvelles règles** (inactives par défaut, à activer par configuration) : `cameras_nommees` (nombre minimal de caméras nommées), `rendu_non_realiste` (Freestyle, Line Art, Filaire, coque inversée, Shader vers RVB, Toon ; « acquis » quand présent), `journal_travail` (journal absent, altéré, trop peu de jours ou d'enregistrements).
 - **Poids et géométrie** (actives en « conseil » dans Général) :
   - `texture_surdimensionnee` : résolution de chaque image comparée à ce que les caméras peuvent en afficher (pixels par mètre à l'écran × densité de texels des UV, répétitions du node Mapping comprises) ; propose une taille suffisante ;
@@ -37,4 +37,4 @@ Traçabilité et évaluations externes.
   - `geometrie` : sommets en double, normales incohérentes ou inversées (volumes fermés), faces non planes ;
   - `poids_fichier` : poids du fichier, faces, mémoire des textures (information, avertissement au-delà de seuils facultatifs).
 - **UV** : option `seulement_textures_image` pour `uv_manquantes` et `uv_ecrasees` (ne contrôler que les objets dont une texture image est placée par des UV).
-- Première grille externe : `evaluations/m1-s7-modelisation-avancee.toml`.
+- Première grille externe : modélisation avancée (M1, S7), distribuée à part aux étudiants.

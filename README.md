@@ -31,12 +31,12 @@ Blender 4.2 ou plus récent.
 Conseil : mettre son nom dans le nom du fichier `.blend` ; il se retrouve dans le nom et l'en-tête du rapport.
 
 ## Pour l'enseignant : adapter les règles
-Les règles se règlent dans un fichier TOML par thématique (`configs/` dans l'extension) : activer ou désactiver une règle, changer son niveau, ses seuils et ses textes. `configs/general.toml` liste toutes les règles et tous leurs réglages. Une grille personnalisée peut aussi être chargée directement dans le panneau (« Charger un fichier .toml… ») ; les grilles d'évaluation sont fournies à part, dans le dossier `evaluations/` du dépôt.
+Les règles se règlent dans un fichier TOML par thématique (`configs/` dans l'extension) : activer ou désactiver une règle, changer son niveau, ses seuils et ses textes. `configs/general.toml` liste toutes les règles et tous leurs réglages. Une grille personnalisée peut aussi être chargée directement dans le panneau (« Charger un fichier .toml… ») ; les grilles d'évaluation ne sont pas publiées : l'enseignant les fournit à part.
 
 Licence : GPL-3.0-or-later. Auteur : Damien Hanser.
 
 ## Charger une grille fournie par l'enseignant
-Menu des thématiques > **Charger un fichier .toml…**, puis choisir le fichier reçu (par exemple `m1-s7-modelisation-avancee.toml`). Il reste ensuite proposé en tête de liste, même après avoir relancé Blender. Ne le modifiez pas : son empreinte apparaît dans le journal et dans chaque rapport.
+Menu des thématiques > **Charger un fichier .toml…**, puis choisir le fichier reçu. Il reste ensuite proposé en tête de liste, même après avoir relancé Blender. Ne le modifiez pas : son empreinte apparaît dans le journal et dans chaque rapport.
 
 ## Journal de travail
 À chaque enregistrement et à chaque analyse, DiagScene ajoute une ligne dans le fichier .blend (bloc de texte caché « .diagscene_journal ») : date et heure, version de Blender, nombre d'objets, de faces, de matériaux et d'images, poids du fichier, empreinte anonyme de la machine (ni nom d'utilisateur, ni nom d'ordinateur), et thématique utilisée. Les lignes sont chaînées : une ligne modifiée ou supprimée se repère. Le journal aide à retrouver le moment où un problème est apparu, et figure dans le rapport exporté. Il se désactive dans *Préférences > Add-ons > DiagScene*.
